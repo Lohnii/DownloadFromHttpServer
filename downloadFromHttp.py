@@ -1,163 +1,110 @@
 import os
-from pathlib import Path
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urljoin, unquote
 import requests
 from bs4 import BeautifulSoup
 
+# Global variables
 global path, currentPath, url, currentUrl
 path = os.path.dirname(os.path.abspath(__file__))
-print(path)
 currentPath = path
-
 url = 'http://localhost:8000/'
 currentUrl = url
 
+# Track folders and files
 global currentLink, paths, files, allFiles
 paths = ['']
 files = []
 allFiles = []
 currentLink = ''
 
+# Function to extract links from page content
 def get_links(content):
-    soup = BeautifulSoup(content)
-    for a in soup.findAll('a'):
+    soup = BeautifulSoup(content, 'html.parser')
+    for a in soup.find_all('a', href=True):
         yield a.get('href')
 
+# Function to download a single file
 def Baixar(content):
     global path
 
     folder = ''
     fileName = ''
-    #separa a pasta e o arquivo
+
+    # Decode URL-encoded characters
+    content = unquote(content)
+
+    # Separate folder and file name
     if '/' in content:
-        content = content.split('/')
-        fileName = content[-1]
-        content.pop(-1)
-        folder = '\\'.join(content)
-        folder += '\\'
+        parts = content.split('/')
+        fileName = parts[-1]
+        parts.pop(-1)
+        folder = os.path.join(*parts)
     else:
         fileName = content
 
-    currentPath = os.path.join(path,folder)
-    currentPath = currentPath.replace('/','')
-    currentPath = currentPath.replace('%20',' ')
-    fileName = fileName.replace('%20', ' ')
+    currentPath = os.path.join(path, folder)
 
-    print(f'baixando {fileName} para {currentPath}')
- 
-    if not os.path.exists(currentPath):
-        os.makedirs(currentPath)
-        print(f'criou dir {currentPath}')
+    # Ensure the directory exists
+    os.makedirs(currentPath, exist_ok=True)
 
-    with open(f'{currentPath}{fileName}','w') as f:
-        print(f'escrevi {fileName} para {currentPath}{fileName}')
-        f.write(fileName)
+    # File download URL
+    file_url = urljoin(url, content)
 
+    # File save path
+    save_path = os.path.join(currentPath, fileName)
 
+    print(f'Downloading {fileName} to {currentPath}')
+
+    # Download the file
+    response = requests.get(file_url, stream=True)
+    response.raise_for_status()
+
+    with open(save_path, 'wb') as file:
+        for chunk in response.iter_content(chunk_size=8192):
+            file.write(chunk)
+
+# Recursive downloader
 def download():
     global currentPath, url, currentUrl, currentLink
-    print(f"url: {currentUrl}")
-    # path = urlparse(url).path.lstrip(':')
-    # print(f"path: {path}")
-    # path = url
-    # print(content)
+    print(f"Starting download from URL: {currentUrl}")
 
-    do = True
-    while do or len(paths) > 0:
-    # while do:
-        do = False
+    while paths:
+        currentLink = paths.pop(0)
+        currentUrl = urljoin(url, currentLink)
 
-        currentLink = paths[0]
-        currentUrl = url + paths[0]
-        paths.pop(0)
-        
         GetFromPage(currentUrl)
 
-        # r = requests.get(currentUrl)
-        # content = r.text
-        # print(f'\nabrindo {currentUrl}')
-        # # print(get_links(content))
-        # for link in get_links(content):
-        #     #pega as pastas
-        #     if link.endswith('/'):
-        #         #if not link.startswith('.'): # skip hidden files such as .DS_Store
-        #         # download(urljoin(url, link))
-        #         # print(link)
-        #         paths.append(currentLink+link)
-        #     #pega os arquivos
-        #     else:
-        #         files.append(currentLink+link)
-        #         # with open(link, 'w') as f:
-        #         #     f.write(content)
-                
-        # print(f'paths: {paths}\nfiles: {files}\ncurrentLink: {currentLink}')
-
-        #baixa todos os arquivos da pasta atual
-        # for file in files:
-        #     print('baixa', file,'\n')
-        #     # Baixar(file)
-
-
-        # #muda o link pra proxima pasta
-        # currentPath = os.path.join(path,paths[0])        
-        # currentUrl = url + paths[0]
-        # paths.pop(0)
-
-        # files = []
-
-    # <h1>Directory listing for /</h1>
-    # <hr>
-    # <ul>
-    # <li><a href="teste%202/">teste 2/</a></li>
-    # <li><a href="teste.txt">teste.txt</a></li>
-    # <li><a href="teste1/">teste1/</a></li>
-    # </ul>
-    # <hr>
-    # </body>
-    # </html>
-
-    # if r.status_code != 200:
-    #     raise Exception('status code is {} for {}'.format(r.status_code, url))
-    # content = r.text
-    # if path.endswith('/'):
-    #     Path(path.rstrip('/')).mkdir(parents=True, exist_ok=True)
-    #     for link in get_links(content):
-    #         if not link.startswith('.'): # skip hidden files such as .DS_Store
-    #             download(urljoin(url, link))
-    # else:
-    #     with open(path, 'w') as f:
-    #         f.write(content)
-
+# Process links from a page
 def GetFromPage(url):
     global currentLink, paths, files, allFiles
 
-    r = requests.get(url)
-    content = r.text
+    response = requests.get(url)
+    response.raise_for_status()
+    content = response.text
 
-    print(f'\nabrindo {url}')
+    print(f'Accessing {url}')
 
     for link in get_links(content):
-        #pega as pastas
+        # Normalize the link
+        full_link = urljoin(currentLink, link)
+
+        # Decode URL-encoded characters
+        link = unquote(link)
+
+        # Directory or file?
         if link.endswith('/'):
-            #if not link.startswith('.'): # skip hidden files such as .DS_Store
-            # download(urljoin(url, link))
-            # print(link)
-            paths.append(currentLink+link)
-        #pega os arquivos
+            paths.append(full_link)
         else:
-            allFiles.append(currentLink+link)
-            # with open(link, 'w') as f:
-            #     f.write(content)
+            allFiles.append(full_link)
 
-    print(f'paths: {paths}\nfiles: {files}\ncurrentLink: {currentLink}\nallFiles: {allFiles}')
+    print(f'Current paths: {paths}')
+    print(f'Current files: {allFiles}')
 
+# Download all files collected
 def DownloadFiles():
-    global allFiles
-
     for file in allFiles:
         Baixar(file)
 
 if __name__ == '__main__':
-    # the trailing / indicates a folder
     download()
     DownloadFiles()
