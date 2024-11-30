@@ -7,7 +7,10 @@ from bs4 import BeautifulSoup
 global path, currentPath, url, currentUrl
 path = os.path.dirname(os.path.abspath(__file__))
 currentPath = path
-url = 'http://localhost:8000/'
+
+#get ip
+ip = input('ip e porta do seu coiso (exemplo: 0.0.0.0:8000):\n') #0.0.0.0:8000
+url = f'http://{ip}/'
 currentUrl = url
 
 # Track folders and files
@@ -16,6 +19,7 @@ paths = ['']
 files = []
 allFiles = []
 currentLink = ''
+
 
 # Function to extract links from page content
 def get_links(content):
