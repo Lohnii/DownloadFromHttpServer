@@ -7,7 +7,7 @@ from requests.exceptions import RequestException
 import concurrent.futures
 
 # Global variables
-global path, url, paths, failed_downloads
+global path, url, paths, allFiles, failed_downloads
 path = os.path.dirname(os.path.abspath(__file__))
 
 #get ip
@@ -15,6 +15,7 @@ ip = input('ip e porta do seu coiso (exemplo: 0.0.0.0:8000):\n') #0.0.0.0:8000
 url = f'http://{ip}/'
 
 paths = ['']  # Queue for folders to process
+allFiles = []  # List of files to download
 failed_downloads = []  # List to track failed downloads
 
 # Function to extract links from page content
@@ -27,74 +28,79 @@ def get_links(content):
 def Baixar(content):
     global path, failed_downloads
 
-    # Decode URL-encoded characters in content (e.g., %20 for space)
-    decoded_content = unquote(content)
-
-    # Separate folder and file name
-    if '/' in decoded_content:
-        parts = decoded_content.split('/')
-        fileName = parts[-1]
-        parts.pop(-1)
-        folder = os.path.join(*parts)
-    else:
-        folder = ''
-        fileName = decoded_content
-
-    # Handle invalid characters in folder and file names
-    safe_folder = folder.replace(':', '_').replace('<', '_').replace('>', '_').replace('|', '_').replace('?', '_').replace('"', '_')
-    safe_fileName = fileName.replace(':', '_').replace('<', '_').replace('>', '_').replace('|', '_').replace('?', '_').replace('"', '_')
-
-    # Create target directory
-    currentPath = os.path.join(path, safe_folder)
-    os.makedirs(currentPath, exist_ok=True)
-
-    # Re-encode the URL to ensure special characters are properly encoded (like # to %23)
-    encoded_url = quote(decoded_content, safe=':/')
-
-    # File download URL
-    file_url = urljoin(url, encoded_url)
-
-    # File save path
-    save_path = os.path.join(currentPath, safe_fileName)
-
-    # Check if the file already exists
     try:
-        response = requests.head(file_url, allow_redirects=True)
-        response.raise_for_status()
-        server_file_size = int(response.headers.get('Content-Length', 0))
+        # Decode URL-encoded characters in content (e.g., %20 for space)
+        decoded_content = unquote(content)
 
-        if os.path.exists(save_path):
-            local_file_size = os.path.getsize(save_path)
-            if local_file_size == server_file_size:
-                print(f"Skipping {safe_fileName}: Already downloaded.")
-                return
-            else:
-                print(f"Redownloading {safe_fileName}: File is incomplete.")
-                os.remove(save_path)  # Delete incomplete file
-    except RequestException as e:
-        print(f"Error checking file {content}: {e}")
-        failed_downloads.append(f"Failed HEAD: {content} -> {e}")
-        return
+        # Separate folder and file name
+        if '/' in decoded_content:
+            parts = decoded_content.split('/')
+            fileName = parts[-1]
+            parts.pop(-1)
+            folder = os.path.join(*parts)
+        else:
+            folder = ''
+            fileName = decoded_content
 
-    # Download the file
-    print(f'Downloading {safe_fileName} to {currentPath}')
+        # Handle invalid characters in folder and file names
+        safe_folder = folder.replace(':', '_').replace('<', '_').replace('>', '_').replace('|', '_').replace('?', '_').replace('"', '_')
+        safe_fileName = fileName.replace(':', '_').replace('<', '_').replace('>', '_').replace('|', '_').replace('?', '_').replace('"', '_')
 
-    try:
-        response = requests.get(file_url, stream=True)
-        response.raise_for_status()
+        # Create target directory
+        currentPath = os.path.join(path, safe_folder)
+        os.makedirs(currentPath, exist_ok=True)
 
-        with open(save_path, 'wb') as file:
-            for chunk in response.iter_content(chunk_size=8192):
-                file.write(chunk)
+        # Re-encode the URL to ensure special characters are properly encoded (like # to %23)
+        encoded_url = quote(decoded_content, safe=':/')
 
-        print(f"Downloaded {safe_fileName} successfully.")
-    except RequestException as e:
-        print(f"Error downloading {content}: {e}")
-        failed_downloads.append(f"Failed: {content} -> {e}")
+        # File download URL
+        file_url = urljoin(url, encoded_url)
+
+        # File save path
+        save_path = os.path.join(currentPath, safe_fileName)
+
+        # Check if the file already exists
+        try:
+            response = requests.head(file_url, allow_redirects=True)
+            response.raise_for_status()
+            server_file_size = int(response.headers.get('Content-Length', 0))
+
+            if os.path.exists(save_path):
+                local_file_size = os.path.getsize(save_path)
+                if local_file_size == server_file_size:
+                    print(f"Skipping {safe_fileName}: Already downloaded.")
+                    return
+                else:
+                    print(f"Redownloading {safe_fileName}: File is incomplete.")
+                    os.remove(save_path)  # Delete incomplete file
+        except RequestException as e:
+            print(f"Error checking file {content}: {e}")
+            failed_downloads.append(f"Failed HEAD: {content} -> {e}")
+            return
+
+        # Download the file
+        print(f'Downloading {safe_fileName} to {currentPath}')
+
+        try:
+            response = requests.get(file_url, stream=True)
+            response.raise_for_status()
+
+            with open(save_path, 'wb') as file:
+                for chunk in response.iter_content(chunk_size=8192):
+                    file.write(chunk)
+
+            print(f"Downloaded {safe_fileName} successfully.")
+        except RequestException as e:
+            print(f"Error downloading {content}: {e}")
+            failed_downloads.append(f"Failed: {content} -> {e}")
+
+    except Exception as e:
+        print(f"Unexpected error for {content}: {e}")
+        failed_downloads.append(f"Unexpected: {content} -> {e}")
 
 # Recursive downloader
 def download():
-    global url, paths
+    global url, paths, allFiles
 
     print(f"Starting download from URL: {url}")
 
@@ -105,7 +111,7 @@ def download():
 
 # Process links from a page
 def GetFromPage(current_url, base_path):
-    global paths
+    global paths, allFiles
 
     try:
         response = requests.get(current_url)
@@ -131,7 +137,9 @@ def GetFromPage(current_url, base_path):
                 if relative_path not in paths:
                     paths.append(relative_path)
             elif '.' in link:  # Likely a file
-                # Download the file immediately using the correct full link
+                # Add file to allFiles list
+                allFiles.append(full_link)
+                # Download the file immediately
                 Baixar(full_link)
 
         print(f'Current paths: {paths}')
@@ -139,6 +147,7 @@ def GetFromPage(current_url, base_path):
         print(f"Error accessing {current_url}: {e}")
         time.sleep(2)  # Adding delay before retry
 
+# Concurrent file downloader
 def download_files_concurrently():
     global allFiles, failed_downloads
 
