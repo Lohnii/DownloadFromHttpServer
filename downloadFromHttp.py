@@ -7,7 +7,7 @@ from requests.exceptions import RequestException
 import concurrent.futures
 
 # Global variables
-global path, url, paths
+global path, url, paths, failed_downloads
 path = os.path.dirname(os.path.abspath(__file__))
 
 #get ip
@@ -15,6 +15,7 @@ ip = input('ip e porta do seu coiso (exemplo: 0.0.0.0:8000):\n') #0.0.0.0:8000
 url = f'http://{ip}/'
 
 paths = ['']  # Queue for folders to process
+failed_downloads = []  # List to track failed downloads
 
 # Function to extract links from page content
 def get_links(content):
@@ -24,7 +25,7 @@ def get_links(content):
 
 # Function to download a single file
 def Baixar(content):
-    global path
+    global path, failed_downloads
 
     # Decode URL-encoded characters in content (e.g., %20 for space)
     decoded_content = unquote(content)
@@ -56,9 +57,28 @@ def Baixar(content):
     # File save path
     save_path = os.path.join(currentPath, safe_fileName)
 
-    print(f'Downloading {safe_fileName} to {currentPath}')
+    # Check if the file already exists
+    try:
+        response = requests.head(file_url, allow_redirects=True)
+        response.raise_for_status()
+        server_file_size = int(response.headers.get('Content-Length', 0))
+
+        if os.path.exists(save_path):
+            local_file_size = os.path.getsize(save_path)
+            if local_file_size == server_file_size:
+                print(f"Skipping {safe_fileName}: Already downloaded.")
+                return
+            else:
+                print(f"Redownloading {safe_fileName}: File is incomplete.")
+                os.remove(save_path)  # Delete incomplete file
+    except RequestException as e:
+        print(f"Error checking file {content}: {e}")
+        failed_downloads.append(f"Failed HEAD: {content} -> {e}")
+        return
 
     # Download the file
+    print(f'Downloading {safe_fileName} to {currentPath}')
+
     try:
         response = requests.get(file_url, stream=True)
         response.raise_for_status()
@@ -66,9 +86,11 @@ def Baixar(content):
         with open(save_path, 'wb') as file:
             for chunk in response.iter_content(chunk_size=8192):
                 file.write(chunk)
+
+        print(f"Downloaded {safe_fileName} successfully.")
     except RequestException as e:
         print(f"Error downloading {content}: {e}")
-        time.sleep(2)  # Adding a short delay before retry
+        failed_downloads.append(f"Failed: {content} -> {e}")
 
 # Recursive downloader
 def download():
@@ -118,7 +140,7 @@ def GetFromPage(current_url, base_path):
         time.sleep(2)  # Adding delay before retry
 
 def download_files_concurrently():
-    global allFiles
+    global allFiles, failed_downloads
 
     # Set the number of threads (adjust as needed)
     max_threads = 10  # You can increase or decrease this based on your system's capabilities
@@ -130,7 +152,19 @@ def download_files_concurrently():
 
         # Wait for all threads to complete
         for future in concurrent.futures.as_completed(futures):
-            future.result()  # Check for any exceptions raised during the download
+            try:
+                future.result()  # Check for any exceptions raised during the download
+            except Exception as e:
+                # Log unexpected errors
+                failed_downloads.append(f"Unexpected error -> {e}")
+
+    # Print failed downloads at the end
+    if failed_downloads:
+        print("\n### Failed Downloads ###")
+        for failure in failed_downloads:
+            print(failure)
+    else:
+        print("\nAll files downloaded successfully!")
 
 if __name__ == '__main__':
     download()
