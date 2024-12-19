@@ -14,7 +14,13 @@ path = os.path.dirname(os.path.abspath(__file__))
 ip = ''
 try:
     with open('ip.txt','r') as i:
-        ip = i.read()
+        r = i.read()
+        if '.' in r: # if not empty
+            ip = r
+            print(ip)
+        else: #if empty
+            raise Exception("no ip in txt")
+
 except:    
     ip = input('ip e porta do seu coiso (exemplo: 0.0.0.0:8000):\n') #0.0.0.0:8000
 
