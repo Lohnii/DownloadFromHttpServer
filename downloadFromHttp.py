@@ -172,8 +172,10 @@ def download_files_concurrently():
         print("\n### Failed Downloads ###")
         for failure in failed_downloads:
             print(failure)
+            input()
     else:
         print("\nAll files downloaded successfully!")
+        input()
 
 if __name__ == '__main__':
     download()
