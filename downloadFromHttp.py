@@ -11,7 +11,13 @@ global path, url, paths, allFiles, failed_downloads
 path = os.path.dirname(os.path.abspath(__file__))
 
 #get ip
-ip = input('ip e porta do seu coiso (exemplo: 0.0.0.0:8000):\n') #0.0.0.0:8000
+ip = ''
+try:
+    with open('ip.txt','r') as i:
+        ip = i.read()
+except:    
+    ip = input('ip e porta do seu coiso (exemplo: 0.0.0.0:8000):\n') #0.0.0.0:8000
+
 url = f'http://{ip}/'
 
 paths = ['']  # Queue for folders to process
@@ -170,9 +176,14 @@ def download_files_concurrently():
     # Print failed downloads at the end
     if failed_downloads:
         print("\n### Failed Downloads ###")
+
         for failure in failed_downloads:
             print(failure)
-            input()
+
+        with open('failures.txt', 'w') as f:            
+                f.writelines(failed_downloads)
+
+        input()
     else:
         print("\nAll files downloaded successfully!")
         input()
